@@ -1,5 +1,6 @@
 const mongoose = require('mongoose')
 const slugify = require('slugify')
+//const User = require('./userModel')
 //const validator = require('validator')
 
 const toursSchema = new mongoose.Schema({
@@ -75,7 +76,37 @@ const toursSchema = new mongoose.Schema({
   secretTour: {
       type: Boolean,
       default: false
-  }
+  },
+  startLocation: {
+      // Geo JSON
+      type: {
+        type: String,
+        default: 'Point',
+        enum: ['Point']
+      },
+      coordinates: [Number],
+      address: String,
+      description: String
+  },
+  locations: [
+      {
+          type: {
+              type: String,
+              default: 'Point',
+              enum: ['Point']
+          },
+          coordinates: [Number],
+          address: String,
+          description: String,
+          day: Number
+      }
+  ],
+  guides: [
+    {
+      type: mongoose.Schema.ObjectId,
+      ref: 'User'
+    }
+  ]
 },{
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
@@ -91,6 +122,17 @@ toursSchema.pre('save', function(next) {
     this.slug = slugify(this.name, { lower: true })
     next()
 })
+
+// ===================
+// Document Middleware
+// ===================
+
+// Lié les user au document
+// toursSchema.pre('save', async function(next) {
+//     const guidesPromises = this.guides.map(async guideID => await User.findById(guideID))
+//     this.guides = await Promise.all(guidesPromises)
+//     next()
+// })
 
 // toursSchema.pre('save', function(next) {
 //     console.log('Will save document and netx()')
@@ -110,11 +152,21 @@ toursSchema.pre(/^find/, function(next) {
     next()
 })
 
+toursSchema.pre(/^find/, function(next) {
+    this.populate({
+        path: 'guides',
+        select: '-__v -passwordChangedAt'
+    })
+    next()
+})
+
 toursSchema.post(/^find/, function(docs, next) {
     console.log('Query :'+(Date.now() - this.start) + ' ms')
     //console.log(docs)
     next()
 })
+
+
 
 // Aggregation Middleware
 toursSchema.pre('aggregate', function(next) {
