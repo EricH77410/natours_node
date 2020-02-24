@@ -38,7 +38,8 @@ const toursSchema = new mongoose.Schema({
       type: Number,
       default: 4.5,
       min: [1, 'A Tour Rating must be above 1.0'],
-      max: [5, 'A Tour Rating must be below 5.0']
+      max: [5, 'A Tour Rating must be below 5.0'],
+      set: val => Math.round(val * 10) / 10 // Trick pour arrondir ex: 4.6666, 46, 47, 4.7
   },
   ratingsQuantity: {
       type: Number,
@@ -112,9 +113,21 @@ const toursSchema = new mongoose.Schema({
     toObject: { virtuals: true }
 })
 
+//toursSchema.index({ price: 1 })
+toursSchema.index({ price: 1, ratingsAverage: -1 })
+toursSchema.index({ slug: 1 })
+toursSchema.index({ startLocation: '2dsphere' })
+
 // Propriété virtuelle (non stocké dans la db)
 toursSchema.virtual('durationWeeks').get(function() {
     return this.duration / 7
+})
+
+// Virtual populate
+toursSchema.virtual('reviews', {
+    ref: 'Review',
+    foreignField: 'tour',
+    localField: '_id'
 })
 
 // Midleware document avant save() et create() mais pas pour insertMany()
@@ -169,11 +182,11 @@ toursSchema.post(/^find/, function(docs, next) {
 
 
 // Aggregation Middleware
-toursSchema.pre('aggregate', function(next) {
-    this.pipeline().unshift({ $match: { secretTour: {$ne: true}} })
-    console.log(this.pipeline())
-    next()
-})
+// toursSchema.pre('aggregate', function(next) {
+//     this.pipeline().unshift({ $match: { secretTour: {$ne: true}} })
+//     console.log(this.pipeline())
+//     next()
+// })
 
 const Tour = mongoose.model('Tour', toursSchema)
 

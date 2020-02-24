@@ -1,0 +1,15 @@
+extends base
+
+block content
+  main.main 
+    .login-form
+      h2.heading-secondary.ma-bt-lg= title
+      form.form.form--login
+        .form-group
+          label.form__label(for='email') Email Address
+          input#email.form__input(type='email', placeholder='you@domain.com', required)
+        .form-group.ma-bt-md
+          label.form__label(for='password') Password
+          input#password.form__input(type='password', placeholder='********', required, milength='8')
+        .form-group
+          button.btn.btn--green Login

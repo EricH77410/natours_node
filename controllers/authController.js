@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken')
 const User = require('../models/userModel')
 const catchAsync = require('../utils/catchAsync')
 const AppError = require('../utils/appError')
-const sendEmail = require('../utils/email')
+const Email = require('../utils/email')
 
 const signToken = id => {
   return jwt.sign({ id: id }, process.env.JWT_SECRET, {
@@ -44,6 +44,12 @@ exports.signup = catchAsync(async (req, res, next) => {
     role: req.body.role
   })
 
+  const url = `${req.protocol}://${req.get('host')}/me`
+
+  console.log('Sending Email...')
+  await new Email(newUser, url).sendWelcome()
+
+  console.log('CreateToken...')
   createAndSendToken(newUser, 201, res)
 
 })
@@ -68,11 +74,22 @@ exports.login = catchAsync(async(req, res, next) => {
 
 })
 
+// Un moyen malin pour reset le cookie jwt en cas de logout
+exports.logout = (req, res) => {
+  res.cookie('jwt','logout', {
+    expires: new Date(Date.now() + 10 *100),
+    httpOnly: true
+  })
+  res.status(200).json({status: 'success'})
+}
+
 exports.protect = catchAsync(async (req, res, next) => {
   // 1 - Get the token and check it's there
   let token
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1]
+  } else if (req.cookies.jwt) {
+    token = req.cookies.jwt
   }
 
   if (!token) {
@@ -95,6 +112,7 @@ exports.protect = catchAsync(async (req, res, next) => {
 
   // Access granted to protected route
   req.user = currentUser
+  res.locals.user = currentUser
   next()
 })
 
@@ -119,20 +137,11 @@ exports.forgotPassword =catchAsync( async (req, res, next) => {
   // 2 generate random token
   const resetToken = user.createPasswordResetToken()
   await user.save({ validateBeforeSave: false })
-
   
-  // 3 Send it back as email
-  const resetURL = `${req.protocol}://${req.get('host')}/api/v1/users/resetPassword/${resetToken}`
-  
-  const message = `Forgot your password? Submit a PATCH request with your new password and passwordConfirm to: 
-  ${resetURL}.\nIf you didn't forget your password, please ignore this.`
-
-  try {
-    await sendEmail({
-      email: user.email,
-      subject: 'Your password reset token (valid for 10min)',
-      message
-    })
+  // 3 Send it back as email  
+  try {    
+    const resetURL = `${req.protocol}://${req.get('host')}/api/v1/users/resetPassword/${resetToken}`
+    await new Email(user, resetURL).sendPasswordReset()
   
     res.status(200).json({
       status: 'success',
@@ -175,6 +184,7 @@ exports.resetPassword = catchAsync( async (req, res, next) => {
 })
 
 exports.updatePassword =catchAsync( async (req, res, next) => {
+  console.log(req.body)
   // 1- get the user from the collection
   const user = await User.findById(req.user.id).select('+password')
 
@@ -186,8 +196,39 @@ exports.updatePassword =catchAsync( async (req, res, next) => {
   // 3- update the password if the password is correct
   user.password = req.body.password
   user.passwordConfirm = req.body.passwordConfirm
-  await user.save()
 
+  console.log('try to save')
+  await user.save()
+  console.log('create and send token')
   // 4- Log user, send JWT
   createAndSendToken(user, 200, res)
 })
+
+// Only for render pages (if a user is logged the header is not the same)
+exports.isLoggedIn = async (req, res, next) => {
+
+  if (req.cookies.jwt) {
+    try {
+      // Verify the token
+      const decoded = await promisify(jwt.verify)(req.cookies.jwt, process.env.JWT_SECRET)
+      
+      // 3 - Check if user still exists
+      const currentUser = await User.findById(decoded.id)
+      if (!currentUser) {
+        return next()
+      }
+
+      // 4 - Check if user changed password after the token was issued
+      if (currentUser.changedPasswordAfter(decoded.iat)) {
+        return next()
+      }
+
+      // There is a loggeg user, so add to the response a user variable
+      res.locals.user = currentUser
+      return next() 
+    } catch (err) {
+      return next()
+    }   
+  }
+  next()
+}
